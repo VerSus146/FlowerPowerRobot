@@ -1,18 +1,66 @@
 import RPi.GPIO as GPIO
 from time import sleep
+from threading import Thread
+from gpiozero import Button
 import json
 import subprocess
 import requests
+import os.path
 
 GPIO.setmode(GPIO.BCM) # GPIO Numbers instead of board numbers
 
-GPIO.setup(17, GPIO.OUT) # GPIO Assign mode
-GPIO.setup(21, GPIO.IN)
+# GPIO Assign mode
+GPIO.setup(17, GPIO.OUT) # Switch
+GPIO.setup(27, GPIO.OUT) # LED
+GPIO.setup(21, GPIO.IN) # Water check
+button = Button(22) # Button
 
 timeBetweenChecks=1 # Time between robot cycles
 
 json = {}
 robot_id = ''
+
+class Bluetooth_init:
+    def __init__(self, button_GPIO):
+        print("Starting Bluetooth Thread")
+        self.button_GPIO = button_GPIO
+        self._running = True
+        
+    def terminate(self):
+        self._running = False
+        
+    def Check_connection_file(self):
+        return os.path.isfile("/etc/wpa_supplicant/wpa_supplicant.conf")
+        
+    def LED_flash(self):
+        GPIO.output(27, False)
+        sleep(1)
+        GPIO.output(27, True)
+        sleep(1)
+    
+    def run(self):
+        looking_for_bluetooth = False
+        while self._running:
+            if self.Check_connection_file() is True:
+                button_held = GPIO.input(self.button_GPIO)
+                if looking_for_bluetooth is False:
+                    print(GPIO.input(self.button_GPIO))
+                    if button_held == 1:
+                        GPIO.output(27, True)
+                    else:
+                        looking_for_bluetooth = True
+                else:
+                    waiting_for_connection_period = 0
+                    while waiting_for_connection_period < 11:
+                        self.LED_flash()
+                        waiting_for_connection_period = waiting_for_connection_period + 1
+                    looking_for_bluetooth = False
+            else:
+                GPIO.output(27, False)
+
+Bluetooth_button_class = Bluetooth_init(22)
+Bluetooth_button_thread = Thread(target=Bluetooth_button_class.run)
+Bluetooth_button_thread.start()
 
 def getserial():
   # Extract serial from cpuinfo file
@@ -55,7 +103,11 @@ while True:
         "plantId" : 3, # TODO: SChange it to work with phone app
         "value" : value,
     }
+    print(json)
+    """
+    # Commenting because without server it stops working
     resp = requests.post('http://192.168.0.24:1336/PlantData', json)
     print(json)
     print(resp)
+    """
     sleep(timeBetweenChecks) # Wait for next cycle
